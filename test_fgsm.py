@@ -64,9 +64,9 @@ solver.test(test_loader)
 solver.generate(
     num_sample=100,  # bạn có thể tăng số lượng
     target=0,     # -1 nghĩa là untargeted
-    epsilon=0.03,
-    alpha=2/255,
-    iteration=50
+    epsilon=0.1,
+    alpha=0.1,
+    iteration=1000
 )
 
 # abc

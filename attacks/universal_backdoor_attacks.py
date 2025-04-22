@@ -736,7 +736,7 @@ class universal_backdoor_attack:
         }, filepath)
         
         logging.info(f"Poisoned dataset saved to '{filepath}'.")
-
+    
     def load_poisoned_dataset(self, filepath=None):
         """
         Loads a previously saved poisoned dataset \( D' \) from disk.
@@ -752,7 +752,7 @@ class universal_backdoor_attack:
             # Define the default filepath
             filepath = file_dir / f"{self.data_obj.dataset_name}_{self.model.model_name}_{self.target_label}_{self.mu}_{self.beta}_{self.lambd}_{self.epsilon}_poisoned_dataset.pt"
 
-        if not filepath.exists():
+        if not os.path.exists(filepath):
             raise FileNotFoundError(f"The poisoned dataset file '{filepath}' does not exist.")
         
         # Load the poisoned dataset tensors

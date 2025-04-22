@@ -32,6 +32,7 @@ class LSTM(nn.Module):
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.model_name = 'LSTM'
+        self.bidirectional = bidirectional
     def forward(self, x):
         # Khởi tạo hidden state và cell state
         # x shape: (B, T, input_size)
@@ -47,3 +48,14 @@ class LSTM(nn.Module):
 
         
         return out
+
+    def forward_embeddings(self, x):
+        """
+        Trả về đặc trưng từ tầng LSTM, dùng cho Spectral Signature Defense.
+        """
+        if x.dim() == 2:
+            x = x.unsqueeze(-1)
+        h0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size).to(x.device)
+        out, _ = self.lstm(x, (h0, c0))
+        return out[:, -1, :]  # (batch_size, hidden_size * num_directions)

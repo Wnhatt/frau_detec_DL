@@ -138,3 +138,27 @@ class simDataset(Dataset):
         x = torch.tensor(self.x[idx], dtype=torch.float).to(self.device)
         y = torch.tensor(self.y[idx], dtype=torch.int64).to(self.device)
         return x, y
+
+import torch.serialization
+
+# Allowlist TensorDataset globally
+torch.serialization.add_safe_globals([torch.utils.data.dataset.TensorDataset])
+
+def load_model(model, model_path):
+    """
+    Load a model from a specified path.
+    
+    Args:
+        model (torch.nn.Module): The model to load the state into.
+        model_path (str): Path to the saved model file.
+        
+    Returns:
+        torch.nn.Module: The model with loaded state.
+    """
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'), weights_only=True))
+        print(f"Model loaded successfully from {model_path}")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+    
+    return model

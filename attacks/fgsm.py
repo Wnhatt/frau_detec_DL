@@ -35,15 +35,16 @@ class Attack(object):
             x_adv.grad.data.zero_()
         cost.backward()
 
-        x_adv = x_adv + eps * x_adv.grad.sign() if targeted else x_adv - eps * x_adv.grad.sign()
+        x_adv.grad.sign_()
+        x_adv = x_adv - eps*x_adv.grad
         x_adv = torch.clamp(x_adv, x_val_min, x_val_max)
 
-        h = self.net(x)[0]
-        h_adv = self.net(x_adv)[0]
+        h = self.net(x)
+        h_adv = self.net(x_adv)
 
-        return x_adv.detach(), h_adv.detach(), h.detach()
+        return x_adv, h_adv, h
 
-    def i_fgsm(self, x, y, targeted=False, eps=0.03, alpha=0.01, iteration=1, x_val_min=0, x_val_max=1):
+    def i_fgsm(self, x, y, targeted=False, eps=0.03, alpha=1, iteration=1, x_val_min= -1, x_val_max=1):
         self.net.train()  # cần thiết nếu dùng LSTM + CuDNN
 
         print(f"[INPUT] x: {x.shape}, y: {y.shape}")
@@ -82,24 +83,11 @@ class Attack(object):
 
             print(f"[{i}] x_adv shape: {x_adv.shape}")
 
-        # Sau lặp
-        print("[FINAL] computing final outputs")
-        h_orig = self.net(x)
-        h_adv_final = self.net(x_adv)
+        h = self.net(x)
+        h_adv = self.net(x_adv)
 
-        if isinstance(h_orig, tuple):
-            h = h_orig[0]
-        else:
-            h = h_orig
-
-        if isinstance(h_adv_final, tuple):
-            h_adv = h_adv_final[0]
-        else:
-            h_adv = h_adv_final
-
-        print(f"[FINAL] h shape: {h.shape}, h_adv shape: {h_adv.shape}")
-        return x_adv.detach(), h_adv.detach(), h.detach()
-
+        return x_adv, h_adv, h
+    
 
 
 class Solver(object):
