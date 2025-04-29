@@ -145,3 +145,5 @@ def extract_features(model, dataset, batch_size=128, device=None):
             all_features.append(feats.cpu().numpy())
 
     return np.concatenate(all_features, axis=0)
+
+

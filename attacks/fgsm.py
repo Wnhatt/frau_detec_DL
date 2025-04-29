@@ -120,7 +120,7 @@ class Solver(object):
         self.global_epoch = 0
         self.history = {}
         self.visdom = False
-
+    
     def train(self, train_loader, val_loader, num_epochs=10):
         self.model.train()
         for param in self.model.parameters():

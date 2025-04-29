@@ -115,7 +115,7 @@ def main():
     mu = 0.2
     beta = 0.1
     lambd = 0.1
-    epsilon = 0.1
+    epsilon = 0.02
 
     # Now we can plot the distribution for each class
     for c in class_list:

@@ -59,3 +59,7 @@ class LSTM(nn.Module):
         c0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size).to(x.device)
         out, _ = self.lstm(x, (h0, c0))
         return out[:, -1, :]  # (batch_size, hidden_size * num_directions)
+
+    
+    
+        
