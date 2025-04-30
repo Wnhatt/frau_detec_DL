@@ -23,26 +23,23 @@ class Attack(object):
         self.criterion = criterion
 
     def fgsm(self, x, y, targeted=False, eps=0.03, x_val_min=0, x_val_max=1):
-        x_adv = Variable(x.data, requires_grad=True)
-        h_adv = self.net(x_adv)
-        
-        cost = self.criterion(h_adv, y)
-        if not targeted:
-            cost = -cost
-
+        self.net.train()
+        x_adv = x.clone().detach().requires_grad_(True)
+        logits = self.net(x_adv)
+        loss = self.criterion(logits, y)
         self.net.zero_grad()
-        if x_adv.grad is not None:
-            x_adv.grad.data.zero_()
-        cost.backward()
+        loss.backward()
+        grad = x_adv.grad
 
-        x_adv.grad.sign_()
-        x_adv = x_adv - eps*x_adv.grad
+        if grad is None:
+            raise RuntimeError("No gradient")
+
+        # Apply FGSM update
+        direction = -grad.sign() if not targeted else grad.sign()
+        x_adv = x_adv + eps * direction
         x_adv = torch.clamp(x_adv, x_val_min, x_val_max)
 
-        h = self.net(x)
-        h_adv = self.net(x_adv)
-
-        return x_adv, h_adv, h
+        return x_adv.detach(), self.net(x_adv.detach()), self.net(x.detach())
 
     def i_fgsm(self, x, y, targeted=False, eps=0.03, alpha=1, iteration=1, x_val_min= -1, x_val_max=1):
         self.net.train()  # cần thiết nếu dùng LSTM + CuDNN
@@ -60,10 +57,10 @@ class Attack(object):
             else:
                 h_adv = out
 
-            print(f"[{i}] h_adv shape: {h_adv.shape}, y shape: {y.shape}")
+            # print(f"[{i}] h_adv shape: {h_adv.shape}, y shape: {y.shape}")
 
             cost = self.criterion(h_adv, y)
-            print(f"[{i}] loss: {cost.item():.4f}")
+            # print(f"[{i}] loss: {cost.item():.4f}")
 
             if not targeted:
                 cost = -cost
@@ -88,6 +85,29 @@ class Attack(object):
 
         return x_adv, h_adv, h
     
+    def pertube(self, x, y, eps, alpha, k=1, was_training=False):
+        x = x.detach()
+        x = x + torch.zeros_like(x).uniform_(-eps, eps)
+
+        # Lưu lại trạng thái model trước đó
+        model_was_training = self.net.training
+        self.net.train()  # Bắt buộc cho LSTM + backward
+
+        for i in range(k):
+            x.requires_grad_()
+            with torch.enable_grad():
+                logits = self.net(x)
+                loss = F.cross_entropy(logits, y)
+            grad = torch.autograd.grad(loss, [x])[0]
+            x = x.detach() + alpha * torch.sign(grad.detach())
+            x = torch.min(torch.max(x, x - eps), x + eps)
+            x = torch.clamp(x, 0, 1)
+
+        # Phục hồi lại trạng thái model nếu ban đầu là eval
+        if not model_was_training:
+            self.net.eval()
+
+        return x
 
 
 class Solver(object):
@@ -278,5 +298,74 @@ class Solver(object):
             self.net.eval()
         else:
             raise ValueError('mode error. It should be either train or eval')
+    def adv_train(self, train_loader, val_loader, num_epochs=10, attack_type='fgsm', alpha = 0.2):
+        self.model.train()
+        for param in self.model.parameters():
+            param.requires_grad = True
+
+        for epoch in range(num_epochs):
+            running_loss = 0.0
+            progress_bar = tqdm(train_loader, desc=f'[AdvTrain] Epoch {epoch+1}/{num_epochs}', unit='batch')
+
+            for batch_id, (inputs, labels) in enumerate(progress_bar):
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                self.optimizer.zero_grad()
+
+                # === 1. Sinh x_adv ===
+                if attack_type == 'fgsm':
+                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha, k = 1, was_training=True)
+                elif attack_type == 'ifgsm':
+                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha, k = 10, was_training=True)
+                else:
+                    raise ValueError("Unknown attack_type")
+
+                # === 2. Forward + backward + update ===
+                outputs = self.model(x_adv)
+                loss = self.criterion(outputs.squeeze(), labels)
+                loss.backward()
+                self.optimizer.step()
+
+                running_loss += loss.item()
+                progress_bar.set_postfix({'adv_loss': running_loss / (batch_id + 1)})
+
+            print(f'[AdvTrain] Epoch {epoch+1} - Avg Loss: {running_loss/len(train_loader):.4f}')
+        # Validation
+        self.model.eval()
+        correct_pred = 0
+        total_pred = 0
+        with torch.no_grad():
+            test_bar = tqdm(val_loader, desc='Evaluating', unit='batch')
+            for inputs, labels in test_bar:
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                outputs  = self.model(inputs)
+                _, pred = torch.max(outputs.data, 1)
+                total_pred += labels.size(0)
+                correct_pred += (pred == labels).sum().item()
+                test_bar.set_postfix({'acc': f'{100*correct_pred/total_pred:.2f}%'})
+        print("Saving model")
+        torch.save(self.model.state_dict(), os.path.join(self.save_path, f'{self.model.model_name}_adv.pth'))
+    
+    
+
+    def adv_test(self, test_loader, attack_type='fgsm', alpha = 0.2):
+        self.model.eval()
+        correct_pred = 0
+        total_pred = 0
+
+        with torch.no_grad():
+            test_bar = tqdm(test_loader, desc='Testing', unit='batch')
+            for inputs, labels in test_bar:
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                if attack_type == 'fgsm':
+                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha)
+                elif attack_type == 'ifgsm':
+                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha, iteration=10)
+                else:
+                    raise ValueError("Unknown attack_type")
+                outputs  = self.model(x_adv)
+                _, pred = torch.max(outputs.data, 1)
+                total_pred += labels.size(0)
+                correct_pred += (pred == labels).sum().item()
+                test_bar.set_postfix({'acc': f'{100*correct_pred/total_pred:.2f}%'})
 
 # abvl
