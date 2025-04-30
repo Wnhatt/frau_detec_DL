@@ -44,12 +44,12 @@ class Attack(object):
     def i_fgsm(self, x, y, targeted=False, eps=0.03, alpha=1, iteration=1, x_val_min= -1, x_val_max=1):
         self.net.train()  # cần thiết nếu dùng LSTM + CuDNN
 
-        print(f"[INPUT] x: {x.shape}, y: {y.shape}")
+        # print(f"[INPUT] x: {x.shape}, y: {y.shape}")
         x_adv = Variable(x.data.clone(), requires_grad=True)
 
         for i in range(iteration):
             out = self.net(x_adv)
-            print(f"[{i}] net(x_adv) output: {type(out)}")
+            # print(f"[{i}] net(x_adv) output: {type(out)}")
 
             # Xử lý output nếu là tuple (ví dụ LSTM)
             if isinstance(out, tuple):
@@ -78,7 +78,7 @@ class Attack(object):
             x_adv = torch.clamp(x_adv, x_val_min, x_val_max)
             x_adv = Variable(x_adv.data.clone(), requires_grad=True)
 
-            print(f"[{i}] x_adv shape: {x_adv.shape}")
+            # print(f"[{i}] x_adv shape: {x_adv.shape}")
 
         h = self.net(x)
         h_adv = self.net(x_adv)

@@ -55,7 +55,7 @@ args = Args()
 solver = Solver(args)
 
 # # --- Huấn luyện ---
-solver.train(train_loader, test_loader, num_epochs=num_epochs)
+# solver.train(train_loader, test_loader, num_epochs=num_epochs)
 
 # # # --- Đánh giá ---
 # # solver.test(test_loader)
