@@ -347,25 +347,5 @@ class Solver(object):
     
     
 
-    def adv_test(self, test_loader, attack_type='fgsm', alpha = 0.2):
-        self.model.eval()
-        correct_pred = 0
-        total_pred = 0
-
-        with torch.no_grad():
-            test_bar = tqdm(test_loader, desc='Testing', unit='batch')
-            for inputs, labels in test_bar:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                if attack_type == 'fgsm':
-                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha)
-                elif attack_type == 'ifgsm':
-                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha, iteration=10)
-                else:
-                    raise ValueError("Unknown attack_type")
-                outputs  = self.model(x_adv)
-                _, pred = torch.max(outputs.data, 1)
-                total_pred += labels.size(0)
-                correct_pred += (pred == labels).sum().item()
-                test_bar.set_postfix({'acc': f'{100*correct_pred/total_pred:.2f}%'})
 
 # abvl
