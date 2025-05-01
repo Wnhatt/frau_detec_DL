@@ -102,7 +102,7 @@ class falfa:
         # Step 2: Initialize label flips
         flip_idx = np.random.choice(n, n_flip, replace=False)
         poisoned_labels[flip_idx] = 1 - poisoned_labels[flip_idx]
-
+        
         for it in range(self.max_iter):
             print(f"🔁 Iteration {it + 1}/{self.max_iter}")
 
@@ -131,6 +131,7 @@ class falfa:
         y_var = cp.Variable(n)
         objective = cp.Minimize((alpha - beta) @ y_var)
         constraints = [
+            cp.sum(cp.abs(y_var - y_train)) <= epsilon * n,  # số lượng nhãn bị đổi
             lam @ y_var <= epsilon * n + lam @ y_train,
             y_var >= 0,
             y_var <= 1
