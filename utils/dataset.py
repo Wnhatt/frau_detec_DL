@@ -111,7 +111,7 @@ class simDataset(Dataset):
         X = df.copy()
         Y = X['isFraud']
         X.drop(columns=['isFraud'], inplace=True)
-
+        
         # Train/test split
         train_X, test_X, train_Y, test_Y = train_test_split(X, Y, test_size=0.2, random_state=42)
 

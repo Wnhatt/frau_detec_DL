@@ -141,5 +141,19 @@ class falfa:
         if y_var.value is None:
             raise ValueError("❌ LP Solver failed.")
         return np.round(y_var.value).astype(int)
+    
+
+    def evaluate_model(self, model, dataloader, device):
+        model.eval()
+        correct = total = 0
+        with torch.no_grad():
+            for x_batch, y_batch in dataloader:
+                x_batch = x_batch.to(device)
+                y_batch = y_batch.to(device)
+                outputs = model(x_batch)
+                preds = outputs.argmax(dim=1)
+                correct += (preds == y_batch).sum().item()
+                total += y_batch.size(0)
+        return correct / total 
 
     

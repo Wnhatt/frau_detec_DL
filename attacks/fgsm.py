@@ -8,6 +8,7 @@ from torch.autograd import Variable
 from torchvision.utils import save_image
 import os
 from tqdm import tqdm
+import numpy as np
 
 def where(cond, x, y):
     """
@@ -59,7 +60,7 @@ class Attack(object):
 
             # print(f"[{i}] h_adv shape: {h_adv.shape}, y shape: {y.shape}")
 
-            cost = self.criterion(h_adv, y)
+            cost = self.criterion(h_adv, y) # loss cảng nhỏ càng tốt, y = 0, 
             # print(f"[{i}] loss: {cost.item():.4f}")
 
             if not targeted:
@@ -70,9 +71,9 @@ class Attack(object):
                 x_adv.grad.data.zero_()
 
             cost.backward()
-
-            step = alpha * x_adv.grad.sign()
-            x_adv = x_adv + step if targeted else x_adv - step
+        
+            step = alpha * x_adv.grad.sign() # 
+            x_adv = x_adv + step if targeted else x_adv - step #
             x_adv = where(x_adv > x + eps, x + eps, x_adv)
             x_adv = where(x_adv < x - eps, x - eps, x_adv)
             x_adv = torch.clamp(x_adv, x_val_min, x_val_max)
@@ -261,6 +262,8 @@ class Solver(object):
         print('[AFTER]  accuracy : {:.2f} cost : {:.3f}'.format(accuracy_adv, cost_adv))
 
         self.set_mode('train')
+        
+        return accuracy, accuracy_adv
 
     def save_checkpoint(self, filename='ckpt.tar'):
         model_states = {'net': self.net.state_dict()}
@@ -298,7 +301,7 @@ class Solver(object):
             self.net.eval()
         else:
             raise ValueError('mode error. It should be either train or eval')
-    def adv_train(self, train_loader, val_loader, num_epochs=10, attack_type='fgsm', alpha = 0.2):
+    def adv_train(self, train_loader, val_loader, num_epochs=10, attack_type='fgsm', alpha = 0.2, eps = 0.03, lam = 0.5):
         self.model.train()
         for param in self.model.parameters():
             param.requires_grad = True
@@ -313,9 +316,9 @@ class Solver(object):
 
                 # === 1. Sinh x_adv ===
                 if attack_type == 'fgsm':
-                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha, k = 1, was_training=True)
+                    x_adv = self.attack.pertube(inputs, labels, eps=eps, alpha = alpha, k = 1, was_training=True)
                 elif attack_type == 'ifgsm':
-                    x_adv = self.attack.pertube(inputs, labels, eps=self.eps, alpha = alpha, k = 10, was_training=True)
+                    x_adv = self.attack.pertube(inputs, labels, eps=eps, alpha = alpha, k = 10, was_training=True)
                 else:
                     raise ValueError("Unknown attack_type")
 
@@ -345,6 +348,41 @@ class Solver(object):
         print("Saving model")
         torch.save(self.model.state_dict(), os.path.join(self.save_path, f'{self.model.model_name}_adv.pth'))
     
+    def adv_train_2(self, train_loader, val_loader, num_epochs=10, attack_type='fgsm', alpha=0.01):
+        epsilon_schedule = np.arange(0.05, 2.05, 0.05)
+        self.model.train()
+
+        for epoch in range(num_epochs):
+            running_loss = 0.0
+            progress_bar = tqdm(train_loader, desc=f'[AdvTrain] Epoch {epoch+1}/{num_epochs}', unit='batch')
+
+            for batch_id, (inputs, labels) in enumerate(progress_bar):
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                self.optimizer.zero_grad()
+
+                eps = float(np.random.choice(epsilon_schedule))
+
+                if attack_type == 'fgsm':
+                    x_adv, _, _ = self.attack.fgsm(inputs, labels, targeted=False, eps=eps)
+                elif attack_type == 'ifgsm':
+                    x_adv, _, _ = self.attack.i_fgsm(inputs, labels, targeted=False, eps=eps, alpha=alpha, iteration=10)
+                else:
+                    raise ValueError("Unknown attack_type")
+
+                outputs = self.model(x_adv)
+                loss = self.criterion(outputs, labels)
+                loss.backward()
+                self.optimizer.step()
+
+                running_loss += loss.item()
+                progress_bar.set_postfix({'adv_loss': running_loss / (batch_id + 1)})
+
+            print(f'[AdvTrain] Epoch {epoch+1} - Avg Loss: {running_loss/len(train_loader):.4f}')
+
+        # Save model
+        self.model.eval()
+        torch.save(self.model.state_dict(), os.path.join(self.save_path, f'{self.model.model_name}_adv.pth'))
+
     
 
 
