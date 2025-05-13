@@ -146,22 +146,22 @@ class universal_backdoor_attack:
             print(f'Epoch {epoch+1} - Avg Loss: {running_loss/len(train_loader):.4f}')
         
 
-        self.model.eval()  # Set model to evaluation mode
-        correct_pred = 0
-        total_pred = 0
+        # self.model.eval()  # Set model to evaluation mode
+        # correct_pred = 0
+        # total_pred = 0
 
-        with torch.no_grad():
-            test_bar = tqdm(val_loader, desc='Evaluating', unit='batch')
-            for inputs, labels in test_bar:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = self.model(inputs)
-                _, pred = torch.max(outputs.data, 1)
-                total_pred += labels.size(0)
-                correct_pred += (pred == labels).sum().item()
-                test_bar.set_postfix({'acc': f'{100*correct_pred/total_pred:.2f}%'})
-        print("Saving model")
-        # Save the model
-        torch.save(self.model.state_dict(), os.path.join(self.save_path, f'{self.model.model_name}.pth'))
+        # with torch.no_grad():
+        #     test_bar = tqdm(val_loader, desc='Evaluating', unit='batch')
+        #     for inputs, labels in test_bar:
+        #         inputs, labels = inputs.to(self.device), labels.to(self.device)
+        #         outputs = self.model(inputs)
+        #         _, pred = torch.max(outputs.data, 1)
+        #         total_pred += labels.size(0)
+        #         correct_pred += (pred == labels).sum().item()
+        #         test_bar.set_postfix({'acc': f'{100*correct_pred/total_pred:.2f}%'})
+        # print("Saving model")
+        # # Save the model
+        # torch.save(self.model.state_dict(), os.path.join(self.save_path, f'{self.model.model_name}.pth'))
 
         
     def test(self, testloader, converted=True):
@@ -780,55 +780,56 @@ class universal_backdoor_attack:
         return asr
 
 
-    def generate(self, clean_dataset):
+    def generate(self, clean_dataset, num_samples=None):
         """
-        Applies the trigger to `num_samples` from the clean dataset (non-target samples only) and 
-        evaluates the attack success rate (ASR) — i.e., how many samples are misclassified as target class.
+        Applies the trigger to clean non-target samples and evaluates:
+        - Attack Success Rate (ASR)
+        - Accuracy after attack (how many samples are still classified correctly)
 
         Args:
-            num_samples (int): Number of clean non-target samples to apply the trigger on.
-            clean_dataset (simDataset): Dataset object with .x and .y attributes.
+            clean_dataset (simDataset): Dataset with .x and .y attributes.
+            num_samples (int, optional): Number of non-target samples to evaluate. Defaults to all.
 
         Returns:
-            asr (float): Attack Success Rate (% of samples predicted as target class).
+            accuracy (float): Accuracy on triggered non-target samples.
+            asr (float): Attack Success Rate on non-target samples.
         """
         self.model.eval()
 
-        # Step 1: Lọc ra các non-target samples
-        
-
+        # Step 1: Lấy ra các sample non-target
         X_all = clean_dataset.x
         y_all = clean_dataset.y
-
-        # Select only non-target samples
         non_target_mask = (y_all != self.target_label)
         X_non_target = X_all[non_target_mask]
         y_non_target = y_all[non_target_mask]
 
+        if num_samples is not None:
+            indices = np.random.choice(len(X_non_target), size=num_samples, replace=False)
+            X_non_target = X_non_target[indices]
+            y_non_target = y_non_target[indices]
 
-        # Lấy số sample
-        num_samples = int(non_target_mask.sum().item())
+        X_non_target_tensor = torch.tensor(X_non_target, dtype=torch.float32).to(self.device)
+        y_non_target_tensor = torch.tensor(y_non_target, dtype=torch.long).to(self.device)
 
-        # Random chọn index
-        indices = np.random.choice(len(X_non_target), size=num_samples, replace=True)
+        # Step 2: Apply trigger
+        X_triggered = self.apply_trigger(X_non_target_tensor)
 
-        # Lấy các sample đã chọn và chuyển về tensor
-        X_clean = torch.tensor(X_non_target[indices], dtype=torch.float32).to(self.device)
-
-        # Apply trigger
-        X_triggered = self.apply_trigger(X_clean)
-
-        # Predict
-        self.model.eval()
+        # Step 3: Predict
         with torch.no_grad():
             outputs = self.model(X_triggered)
             preds = torch.argmax(outputs, dim=1)
 
-        # Compute ASR
-        correct_target = (preds == self.target_label).sum().item()
-        asr = 100 * correct_target / num_samples
+        # Step 4: Compute ASR + Accuracy
+        total = len(y_non_target_tensor)
+        correct_as_target = (preds == self.target_label).sum().item()
+        correct_original = (preds == y_non_target_tensor).sum().item()
 
-        logging.info(f"[Generate Attack] Non-target triggered samples: {num_samples}. ASR: {asr:.2f}%")
-        logging.info(f"Precision : {100 - asr:.2f}%")
-        return asr
+        asr = 100 * correct_as_target / total
+        acc = 100 * correct_original / total
+
+        logging.info(f"[Generate Attack] Non-target triggered samples: {total}.")
+        logging.info(f"ASR (pred == target_label): {asr:.2f}%")
+        logging.info(f"Accuracy (pred == true label): {acc:.2f}%")
+
+        return acc, asr
 
