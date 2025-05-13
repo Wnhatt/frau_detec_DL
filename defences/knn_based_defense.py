@@ -15,6 +15,7 @@ class knn_based_defense:
         """
         self.k = k
         self.eta = eta
+        self.device = 'cuda'
     
     def defense_mechanic(self, X, y):
         m = len(y)
@@ -39,16 +40,18 @@ class knn_based_defense:
                 y_defended[i] = majority_label
             # else: keep original label (already set)
         
-        X_tensor = torch.tensor(X, dtype=torch.float32)
-        y_tensor = torch.tensor(y_defended, dtype=torch.long)
+        return y_defended
 
-        return X_tensor, y_tensor
-
-    def apply_defense(self, X, y_poisoned):
-
-        y_defended_np = self.knn_based_defense(X, y_poisoned)
+    def apply_defense(self, X, y_poisoned, y_clean=None):
+        y_defended_np = self.defense_mechanic(X, y_poisoned)
         num_relabel = (y_defended_np != y_poisoned).sum()
         print(f"🔁 Number of relabeled samples by kNN defense: {num_relabel}")
+
+        if y_clean is not None:
+            relabel_idx = (y_defended_np != y_poisoned)
+            correct_relabel = (y_defended_np[relabel_idx] == y_clean[relabel_idx]).sum()
+            precision = correct_relabel / relabel_idx.sum() if relabel_idx.sum() > 0 else 0
+            print(f"✅ Precision of relabeled samples: {precision:.4f} ({correct_relabel}/{relabel_idx.sum()})")
 
         X_tensor_defended = torch.tensor(X, dtype=torch.float32)
         y_tensor_defended = torch.tensor(y_defended_np, dtype=torch.long)
@@ -57,6 +60,31 @@ class knn_based_defense:
         cleaned_loader = DataLoader(cleaned_dataset, batch_size=32, shuffle=True)
 
         return cleaned_loader
+
+
+    def train_model_after_defense(self, model, cleaned_loader, optimizer, num_epochs, criterion):
+        """
+        Train the model on the cleaned data.
+
+        Parameters:
+            model: The model to be trained.
+            cleaned_loader: DataLoader for the cleaned dataset.
+            optimizer: Optimizer for the model.
+            num_epochs (int): Number of epochs to train.
+        """
+        model.train()
+        for epoch in range(num_epochs):
+            for x_batch, y_batch in cleaned_loader:
+                x_batch = x_batch.to(self.device)
+                y_batch = y_batch.to(self.device)
+
+                optimizer.zero_grad()
+                logits = model(x_batch)
+                loss = criterion(logits, y_batch)
+                loss.backward()
+                optimizer.step()
+        
+        return model
     
     def evaluate_model(self, model, test_loader, device):
         model.eval()

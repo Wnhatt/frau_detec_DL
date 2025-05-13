@@ -50,7 +50,7 @@ class falfa:
         self.optimizer = optimizer
         self.poisoned_labels = poisoned_labels
 
-    def train_model_on_loader(self, dataloader, epochs=None):
+    def train_model_on_loader(self, dataloader, epochs=1):
         self.model.train()
         if epochs is None:
             epochs = self.epochs
@@ -91,16 +91,16 @@ class falfa:
         n_flip = int(self.epsilon * n)
 
         # Step 1: Train clean model
-        print("📌 Training clean model...")
+        # print("📌 Training clean model...")
         self.poisoned_labels = None
-        self.train_model_on_loader(dataloader)
+        # self.train_model_on_loader(dataloader)
 
         p = self.predict_proba(dataloader)
         beta = -np.log(p[:, 1]) + np.log(1 - p[:, 1])
         lam = np.where(y_np == 1, 1, -1)
 
         # Step 2: Initialize label flips
-        flip_idx = np.random.choice(n, n_flip, replace=False)
+        flip_idx = np.random.choice(n, n_flip, replace=True)
         poisoned_labels[flip_idx] = 1 - poisoned_labels[flip_idx]
         
         for it in range(self.max_iter):
@@ -143,14 +143,14 @@ class falfa:
         return np.round(y_var.value).astype(int)
     
 
-    def evaluate_model(self, model, dataloader, device):
-        model.eval()
+    def evaluate_model(self, dataloader, device):
+        self.model.eval()
         correct = total = 0
         with torch.no_grad():
             for x_batch, y_batch in dataloader:
                 x_batch = x_batch.to(device)
                 y_batch = y_batch.to(device)
-                outputs = model(x_batch)
+                outputs = self.model(x_batch)
                 preds = outputs.argmax(dim=1)
                 correct += (preds == y_batch).sum().item()
                 total += y_batch.size(0)

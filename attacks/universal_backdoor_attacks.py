@@ -186,6 +186,8 @@ class universal_backdoor_attack:
                 correct_pred += (pred == labels).sum().item()
                 test_bar.set_postfix({'acc': f'{100*correct_pred/total_pred:.2f}%'})
 
+        accuracy = 100 * correct_pred / total_pred
+        return accuracy
 
     def select_non_target_samples(self, train_set) -> TensorDataset:
         """
@@ -384,7 +386,7 @@ class universal_backdoor_attack:
         
         # Reshape delta for broadcasting: [1, seq_len, 1]
         X_hat = X + self.delta.unsqueeze(0)  # broadcasting tự động xảy ra
-        X_hat = torch.clamp(X_hat, min=self.min_X, max=self.max_X)
+        # X_hat = torch.clamp(X_hat, min=self.min_X, max=self.max_X)
 
         return X_hat
 
@@ -462,11 +464,9 @@ class universal_backdoor_attack:
             self.compute_mode()
         
         # Set the model to evaluation mode to disable dropout, etc.
-        self.model.train()
-        
+        self.model.train()  # ✅ cần để cuDNN hoạt động bình thường
         for param in self.model.parameters():
-            param.requires_grad = False
-
+            param.requires_grad = False  # ✅ đảm bảo không update model
         for epoch in range(1, num_epochs + 1):
             epoch_loss = 0.0
             for X_batch, y_batch in picked_loader:
@@ -559,13 +559,8 @@ class universal_backdoor_attack:
         Raises:
             FileNotFoundError: If the specified trigger file does not exist.
         """
-        if filepath is None:
-            file_dir = Path("./saved_triggers")
-            # Define the default filepath
-            filepath = file_dir / f"{self.data_obj.dataset_name}_{self.model.model_name}_{self.target_label}_{self.mu}_{self.beta}_{self.lambd}_delta.pt"
-
-        if not filepath.exists():
-            raise FileNotFoundError(f"The trigger file '{filepath}' does not exist.")
+        if os.path.exists(filepath) == False:
+            raise FileNotFoundError(f"Trigger file '{filepath}' not found.")
         
         # Load the delta tensor and move to device
         self.delta = torch.load(filepath, map_location=self.device)
@@ -747,10 +742,7 @@ class universal_backdoor_attack:
         Raises:
             FileNotFoundError: If the specified poisoned dataset file does not exist.
         """
-        if filepath is None:
-            file_dir = Path("./saved_datasets")
-            # Define the default filepath
-            filepath = file_dir / f"{self.data_obj.dataset_name}_{self.model.model_name}_{self.target_label}_{self.mu}_{self.beta}_{self.lambd}_{self.epsilon}_poisoned_dataset.pt"
+
 
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"The poisoned dataset file '{filepath}' does not exist.")
@@ -786,3 +778,57 @@ class universal_backdoor_attack:
         asr = 100 * correct_target / total
         logging.info(f"Attack Success Rate (ASR): {asr:.2f}%")
         return asr
+
+
+    def generate(self, clean_dataset):
+        """
+        Applies the trigger to `num_samples` from the clean dataset (non-target samples only) and 
+        evaluates the attack success rate (ASR) — i.e., how many samples are misclassified as target class.
+
+        Args:
+            num_samples (int): Number of clean non-target samples to apply the trigger on.
+            clean_dataset (simDataset): Dataset object with .x and .y attributes.
+
+        Returns:
+            asr (float): Attack Success Rate (% of samples predicted as target class).
+        """
+        self.model.eval()
+
+        # Step 1: Lọc ra các non-target samples
+        
+
+        X_all = clean_dataset.x
+        y_all = clean_dataset.y
+
+        # Select only non-target samples
+        non_target_mask = (y_all != self.target_label)
+        X_non_target = X_all[non_target_mask]
+        y_non_target = y_all[non_target_mask]
+
+
+        # Lấy số sample
+        num_samples = int(non_target_mask.sum().item())
+
+        # Random chọn index
+        indices = np.random.choice(len(X_non_target), size=num_samples, replace=True)
+
+        # Lấy các sample đã chọn và chuyển về tensor
+        X_clean = torch.tensor(X_non_target[indices], dtype=torch.float32).to(self.device)
+
+        # Apply trigger
+        X_triggered = self.apply_trigger(X_clean)
+
+        # Predict
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_triggered)
+            preds = torch.argmax(outputs, dim=1)
+
+        # Compute ASR
+        correct_target = (preds == self.target_label).sum().item()
+        asr = 100 * correct_target / num_samples
+
+        logging.info(f"[Generate Attack] Non-target triggered samples: {num_samples}. ASR: {asr:.2f}%")
+        logging.info(f"Precision : {100 - asr:.2f}%")
+        return asr
+
