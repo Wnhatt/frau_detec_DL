@@ -82,7 +82,7 @@ python test_pruning.py | python test_ss.py
 - **Backdoor Attack & Defense** – BATD: [HamidRezaTajalli/BATD](https://github.com/HamidRezaTajalli/BATD)
 - **Spectral Signature Defense** – *Detecting Backdoor Attacks on Deep Neural Networks by Activation Clustering*, Tran et al., 2018
 
-
+## Meomeo <3 
 ---
 
 ## ⚠️ Disclaimer
