@@ -64,6 +64,10 @@ python test_pruning.py | python test_ss.py
 │   ├── test_knn_defense.py
 │   ├── test_pruning.py
 │   └── ...
+├── attacks/
+├── defences/
+├── save_path/
+├── data.csv
 ├── models/                         # Neural network model definitions
 ├── data/                           # Sample dataset (or link to external source)
 ├── utils/                          # Utility functions for attacks/defenses
